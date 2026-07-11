@@ -660,12 +660,29 @@ func (e *NSenterEvent) SendRequest() error {
 		return err
 	}
 
-	// Wait for the PARENT and CHILD nsenter processes asynchronously. Their
-	// exits can be delayed by the kernel's fuse_flush on inherited FUSE file
-	// descriptors; waiting synchronously here would hold the reaper RLock and
-	// block both the reaper and new FUSE handlers.
-	go cmd.Process.Wait()
-	go firstChildProcess.Wait()
+	// Sysbox-fs marks emulated files FOPEN_NOFLUSH, so inherited descriptors
+	// cannot delay process exit in the kernel's FUSE_FLUSH path. Reap both
+	// children synchronously so their ownership remains bounded by this event.
+	status, err := cmd.Process.Wait()
+	if err != nil {
+		logrus.Warnf("Error waiting for sysbox-fs first child process %d: %s",
+			cmd.Process.Pid, err)
+		if !e.Async {
+			e.reaper.nsenterReapReq()
+		}
+		return err
+	}
+	if !status.Success() {
+		logrus.Warnf("Sysbox-fs first child process error status: %s, pid: %d",
+			status.String(), cmd.Process.Pid)
+		if !e.Async {
+			e.reaper.nsenterReapReq()
+		}
+		return errors.New("Error waiting for sysbox-fs first child process")
+	}
+
+	// Ignore ECHILD if the reaper collected the process first.
+	_, _ = firstChildProcess.Wait()
 
 	// Sysbox-fs' third child (grand-child) process remains and will enter the
 	// go runtime. This is the nsenter agent process.
@@ -735,7 +752,9 @@ func (e *NSenterEvent) SendRequest() error {
 		return ierr
 	}
 
-	e.reaper.reapProcessAsync(e.Process)
+	if _, err := e.Process.Wait(); err != nil && !errors.Is(err, syscall.ECHILD) {
+		logrus.Warnf("Error waiting for sysbox-fs nsenter process %d: %v", e.Process.Pid, err)
+	}
 
 	return nil
 }

@@ -48,6 +48,11 @@ type File struct {
 	server *fuseServer
 }
 
+// openNoFlush is FOPEN_NOFLUSH from Linux FUSE protocol 7.35. The Bazil fork
+// does not expose the newer response flag yet, but the open response field is
+// unchanged and older kernels safely ignore unknown bits.
+const openNoFlush fuse.OpenResponseFlags = 1 << 5
+
 // NewFile method serves as File constructor.
 func NewFile(req *domain.HandlerRequest, attr *fuse.Attr, srv *fuseServer) *File {
 
@@ -164,13 +169,20 @@ func (f *File) Open(
 	// page-cache is being bypassed for all files I/O; however, this doesn't
 	// pose a problem for Sysbox as we are dealing with special FSs.
 	//
-	resp.Flags |= fuse.OpenDirectIO
+	configureOpenResponse(resp, nonSeekable)
 
+	return f, nil
+}
+
+func configureOpenResponse(resp *fuse.OpenResponse, nonSeekable bool) {
+	// Sysbox performs each procfs/sysfs operation synchronously and retains no
+	// dirty state on the open handle. FOPEN_NOFLUSH keeps close(2) out of the
+	// kernel's FUSE_FLUSH inode-lock path, which can deadlock with concurrent
+	// runc and IMA opens of the same emulated sysctl.
+	resp.Flags |= fuse.OpenDirectIO | openNoFlush
 	if nonSeekable {
 		resp.Flags |= fuse.OpenNonSeekable
 	}
-
-	return f, nil
 }
 
 // Release FS operation.

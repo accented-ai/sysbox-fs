@@ -141,10 +141,7 @@ func (si *openat2SyscallInfo) processOpenat2() (*sysResponse, error) {
 		logrus.Infof("openat2(): pid: %d: path under sysbox-fs mount detected: path = %s, flags = %#x, mode = %#x, resolve = %#x",
 			si.pid, fullPath, si.flags, si.mode, si.resolve)
 
-		// Drop some of the RESOLVE_* flags. These flags restrict path resolution in ways that don't work due
-		// to sysbox-fs emulating some resources under /proc/sys/.
-		cleanResolve := si.resolve &^ (RESOLVE_NO_XDEV | RESOLVE_NO_MAGICLINKS | RESOLVE_NO_SYMLINKS | RESOLVE_BENEATH)
-		cleanFlags := si.flags &^ unix.O_PATH
+		cleanFlags, cleanResolve := proxyOpenat2How(si.flags, si.resolve)
 
 		// Open the file inside the container's namespaces via nsenter.
 		payload := domain.Openat2SyscallPayload{
@@ -199,8 +196,11 @@ func (si *openat2SyscallInfo) processOpenat2() (*sysResponse, error) {
 		// Inject the file descriptor into the traced process using SECCOMP_IOCTL_NOTIF_ADDFD
 		targetFd, err := si.injectFd(fd)
 
-		// Close the fd in sysbox-fs after injecting it (the target process now has a copy)
-		unix.Close(fd)
+		// Sysbox-fs marks emulated files FOPEN_NOFLUSH, so closing the source
+		// descriptor cannot enter the kernel's FUSE_FLUSH inode-lock path.
+		if closeErr := unix.Close(fd); closeErr != nil {
+			logrus.Warnf("failed to close injected source fd %d: %v", fd, closeErr)
+		}
 
 		if err != nil {
 			logrus.Errorf("openat2(): pid %d: failed to inject fd %d into target process %d: %v", si.pid, fd, si.pid, err)
@@ -216,4 +216,17 @@ func (si *openat2SyscallInfo) processOpenat2() (*sysResponse, error) {
 
 	// Otherwise let the kernel handle it
 	return t.createContinueResponse(si.reqId), nil
+}
+
+func proxyOpenat2How(flags, resolve uint64) (uint64, uint64) {
+	// SECCOMP_IOCTL_NOTIF_ADDFD uses fget(), which rejects O_PATH file
+	// descriptors. Open a regular descriptor that the kernel can inject; the
+	// Sysbox FUSE open response marks the resulting file FOPEN_NOFLUSH.
+	cleanFlags := flags &^ unix.O_PATH
+
+	// These restrictions do not work with the procfs and sysfs resources
+	// emulated by sysbox-fs.
+	cleanResolve := resolve &^ (RESOLVE_NO_XDEV | RESOLVE_NO_MAGICLINKS | RESOLVE_NO_SYMLINKS | RESOLVE_BENEATH)
+
+	return cleanFlags, cleanResolve
 }
