@@ -103,6 +103,12 @@ func (m *mountSyscallInfo) process() (*sysResponse, error) {
 			return resp, nil
 		}
 
+		// Bind-remounts change only the target mount, even with MS_REC.
+		// Preserve the tracee's authority and the kernel's locked-flag checks.
+		if mh.IsBind(m.Flags) {
+			return m.tracer.createContinueResponse(m.reqId), nil
+		}
+
 		if mip.IsSysboxfsBaseMount(m.Target) ||
 			mip.IsSysboxfsSubmount(m.Target) {
 			return m.processRemount(mip)
