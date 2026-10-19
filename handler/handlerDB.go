@@ -28,10 +28,9 @@ import (
 
 	"github.com/nestybox/sysbox-fs/domain"
 	"github.com/nestybox/sysbox-fs/handler/implementations"
+	"github.com/nestybox/sysbox-fs/internal/sysctlprobe"
 
 	iradix "github.com/hashicorp/go-immutable-radix"
-
-	"github.com/nestybox/sysbox-libs/linuxUtils"
 )
 
 // Slice of sysbox-fs' default handlers and the respective paths where they
@@ -145,9 +144,9 @@ func (hs *handlerService) Setup(
 	}
 
 	// Check if the kernel supports writing to /proc/sys/kernel/shm* sysctls from a user-ns
-	shmSysctlUserNamespaced, err := linuxUtils.ShmSysctlUserNamespaced()
+	shmSysctlUserNamespaced, err := sysctlprobe.Supported()
 	if err != nil {
-		logrus.Warnf("Unable to check if host supports writes to /proc/sys/kernel/shm* from user-ns")
+		logrus.Warnf("Unable to check if host supports writes to /proc/sys/kernel/shm* from user-ns: %v", err)
 	} else {
 		if shmSysctlUserNamespaced {
 			logrus.Infof("Host supports writes to /proc/sys/kernel/shm* from user-ns")

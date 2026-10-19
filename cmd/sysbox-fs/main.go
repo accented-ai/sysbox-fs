@@ -30,6 +30,7 @@ import (
 	"github.com/nestybox/sysbox-fs/domain"
 	"github.com/nestybox/sysbox-fs/fuse"
 	"github.com/nestybox/sysbox-fs/handler"
+	"github.com/nestybox/sysbox-fs/internal/sysctlprobe"
 	"github.com/nestybox/sysbox-fs/ipc"
 	"github.com/nestybox/sysbox-fs/mount"
 	"github.com/nestybox/sysbox-fs/nsenter"
@@ -175,6 +176,9 @@ func setupRunDir() error {
 
 // sysbox-fs main function
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == sysctlprobe.Command {
+		os.Exit(sysctlprobe.Run())
+	}
 
 	app := cli.NewApp()
 	app.Name = "sysbox-fs"
