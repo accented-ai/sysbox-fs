@@ -546,8 +546,8 @@ func (e *NSenterEvent) namespacePaths() []string {
 
 	var paths []string
 
-	// Note: e.Namespace is assumed to be ordered such that if userns is present, it's
-	// always first.
+	// Keep userns last so the broker retains authority over ancestor-owned
+	// namespaces until all other joins finish.
 
 	for _, nstype := range *(e.Namespace) {
 		path := nstype + ":" + filepath.Join("/proc", strconv.Itoa(int(e.Pid)), "/ns", nstype)

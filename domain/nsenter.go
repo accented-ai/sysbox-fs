@@ -39,13 +39,13 @@ const (
 // perform mounts without affecting the container processes.
 
 var AllNSs = []NStype{
-	string(NStypeUser),
 	string(NStypePid),
 	string(NStypeNet),
 	string(NStypeMount),
 	string(NStypeIpc),
 	string(NStypeCgroup),
 	string(NStypeUts),
+	string(NStypeUser),
 }
 
 var AllNSsButUser = []NStype{
